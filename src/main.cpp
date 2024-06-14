@@ -1,27 +1,44 @@
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <DHT.h>
-#include <Adafruit_Sensor.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
 // Defini√ß√µes de pinos
-#define DHTPIN 4      // Pino do sensor DHT22 (temperatura e umidade)
-#define DHTTYPE DHT22 // Tipo do sensor DHT
-#define LDRPIN 34     // Pino do sensor de luminosidade
-#define SOIL_MOISTURE_PIN 35 // Pino do sensor de umidade do solo
-#define WATER_PUMP_PIN 5 // Pino para controlar a bomba de √°gua
-
-// Configura√ß√µes WiFi e MQTT
+#define DHTPIN 4
+#define DHTTYPE DHT22
+#define LDRPIN 34
+#define SOIL_MOISTURE_PIN 35
+#define WATER_PUMP_PIN 5
+// Configura√ß√µes WiFi e AWS IoT
 const char* ssid = "AlexssJeff";
 const char* password = "05122014ja";
-const char* mqtt_server = "SEU_SERVIDOR_MQTT";
-const char* mqtt_topic = "sua/topico/planta";
+const char* aws_endpoint = "a25uug4xbk339z-ats.iot.us-east-1.amazonaws.com"; // Substitua pelo seu endpoint AWS IoT
+const int aws_port = 8883;
+const char* thing_name = "SmartPlantPot"; // Nome do dispositivo
+const char* aws_topic = "$aws/things/SmartPlantPot/shadow/update";
 
-// Inicializa√ß√£o das bibliotecas
-WiFiClient espClient;
+
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 DHT dht(DHTPIN, DHTTYPE);
 
-// Fun√ß√£o para conectar ao WiFi
+// FunÁ„o para ler o conte˙do de um arquivo
+String readFile(fs::FS &fs, const char * path) {
+  File file = fs.open(path, "r");
+  if (!file || file.isDirectory()) {
+    Serial.printf("Falha ao abrir o arquivo: %s\n", path);
+    return String();
+  }
+  String fileContent;
+  while (file.available()) {
+    fileContent += String((char)file.read());
+  }
+  return fileContent;
+}
+
+// FunÁ„o para configurar o WiFi
 void setup_wifi() {
   delay(10);
   Serial.println();
@@ -37,11 +54,22 @@ void setup_wifi() {
 
   Serial.println("");
   Serial.println("WiFi conectado");
-  Serial.println("Endere√ßo IP: ");
+  Serial.println("EndereÁo IP: ");
   Serial.println(WiFi.localIP());
 }
 
-// Fun√ß√£o para reconectar ao MQTT se a conex√£o cair
+// FunÁ„o de callback do MQTT
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Mensagem recebida no tÛpico: ");
+  Serial.print(topic);
+  Serial.print(". Mensagem: ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
+// FunÁ„o para reconectar ao MQTT se a conex„o cair
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Tentando conectar ao MQTT...");
@@ -56,7 +84,6 @@ void reconnect() {
   }
 }
 
-// Setup inicial
 void setup() {
   Serial.begin(115200);
   dht.begin();
@@ -65,10 +92,28 @@ void setup() {
   pinMode(WATER_PUMP_PIN, OUTPUT);
 
   setup_wifi();
-  client.setServer(mqtt_server, 1883);
+
+  // Inicializar SPIFFS
+  if (!SPIFFS.begin(true)) {
+    Serial.println("Erro ao montar SPIFFS");
+    return;
+  }
+
+  // Ler certificados dos arquivos
+  String ca_cert = readFile(SPIFFS, "/ca_cert.pem");
+  String client_cert = readFile(SPIFFS, "/client_cert.pem");
+  String client_key = readFile(SPIFFS, "/client_key.pem");
+
+  espClient.setCACert(ca_cert.c_str());
+  espClient.setCertificate(client_cert.c_str());
+  espClient.setPrivateKey(client_key.c_str());
+
+  client.setServer(aws_endpoint, aws_port);
+  client.setCallback(callback);
+
+  reconnect();
 }
 
-// Fun√ß√£o principal de loop
 void loop() {
   if (!client.connected()) {
     reconnect();
@@ -80,12 +125,19 @@ void loop() {
   int lightLevel = analogRead(LDRPIN);
   int soilMoisture = analogRead(SOIL_MOISTURE_PIN);
 
+
+h = 9.0;
+  t = 8.0;
+  lightLevel = 100;
+  soilMoisture = 8;
+
+
   if (isnan(h) || isnan(t)) {
     Serial.println("Falha ao ler do sensor DHT!");
     return;
   }
 
-  String payload = "{";
+  String payload = "{\"state\": {\"reported\": {";
   payload += "\"temperature\": ";
   payload += t;
   payload += ", \"humidity\": ";
@@ -94,15 +146,20 @@ void loop() {
   payload += lightLevel;
   payload += ", \"soilMoisture\": ";
   payload += soilMoisture;
-  payload += "}";
+  payload += "}}}";
 
-  Serial.print("Enviando payload: ");
+  Serial.print("Enviando payload para o tÛpico ");
+  Serial.print(aws_topic);
+  Serial.print(": ");
   Serial.println(payload);
 
-  client.publish(mqtt_topic, payload.cstr());
+  if (client.publish(aws_topic, payload.c_str())) {
+    Serial.println("Mensagem publicada com sucesso");
+  } else {
+    Serial.println("Falha ao publicar mensagem");
+  }
 
-  // Controle da bomba de √°gua com base na umidade do solo
-  if (soilMoisture < 500) { // Ajuste o valor conforme necess√°rio
+  if (soilMoisture < 500) { // Ajuste o valor conforme necess·rio
     digitalWrite(WATER_PUMP_PIN, HIGH); // Liga a bomba
   } else {
     digitalWrite(WATER_PUMP_PIN, LOW); // Desliga a bomba
