@@ -11,7 +11,7 @@
 #define SOIL_MOISTURE_PIN 35
 #define WATER_PUMP_PIN 5
 
-const int dry = 4000; // value for dry sensor
+const int dry = 4095; // value for dry sensor
 const int wet = 1239; // value for wet sensor
 float h = 0;
 float t = 0;

@@ -228,8 +228,4 @@
             "compilerArgs": [
                 "-mlongcalls",
                 ""
-            ]
-        }
-    ],
-    "version": 4
-}
+         
