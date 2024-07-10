@@ -4,26 +4,13 @@
 #include <DHT.h>
 #include <Wire.h>
 #include "secrets.h"
-
-// Definições de pinos
-
-#define SOIL_MOISTURE_PIN 32
-#define DHTPIN 4
-#define DHTTYPE DHT11
-#define LDRPIN 34
-#define WATER_PUMP_PIN 15
-
-const int dry = 4095; // value for dry sensor
-const int wet = 1350; // value for wet sensor
-const int pump_water = 2700;
+#include "defines.h"
 
 float humidity = 0;
 float temperature = 0;
 int lightLevel = 0;
 int soilMoisture = 0;
 int percentageSoilMoisture = 0;
-
-const int aws_port = 8883;
 
 unsigned long last_pub_aws = 0;
 unsigned long interval_pub = 3600000;
@@ -97,7 +84,8 @@ void setup_pins()
   pinMode(SOIL_MOISTURE_PIN, INPUT);
 
   pinMode(WATER_PUMP_PIN, OUTPUT);
-  digitalWrite(WATER_PUMP_PIN, LOW); // iniciar deligado
+
+  digitalWrite(WATER_PUMP_PIN, HIGH); // iniciar deligado
 }
 
 void setup_aws()
@@ -107,7 +95,7 @@ void setup_aws()
   espClient.setCACert(AWS_CERT_CA);
   espClient.setCertificate(AWS_CERT_CRT);
   espClient.setPrivateKey(AWS_CERT_PRIVATE);
-  client.setServer(AWS_IOT_ENDPOINT, aws_port);
+  client.setServer(AWS_IOT_ENDPOINT, AWS_PORT);
   client.setCallback(callback);
 }
 
@@ -137,11 +125,11 @@ void publishAws()
   payload += "}}}";
 
   Serial.print("Enviando payload para o tópico ");
-  Serial.print(AWS_TOPIC);
+  Serial.print(AWS_PUB_TOPIC);
   Serial.print(": ");
   Serial.println(payload);
 
-  if (client.publish(AWS_TOPIC, payload.c_str()))
+  if (client.publish(AWS_PUB_TOPIC, payload.c_str()))
   {
     Serial.println("Mensagem publicada com sucesso");
     last_pub_aws = millis();
@@ -167,18 +155,18 @@ void water_pump()
   Serial.println(soilMoisture);
 
   Serial.print("pump_water: ");
-  Serial.println(pump_water);
+  Serial.println(PUMP_WATER);
 
   Serial.print("soilMoisture - pump_water: ");
-  Serial.println(soilMoisture - pump_water);
+  Serial.println(soilMoisture - PUMP_WATER);
   Serial.println(" ");
 
-  if (soilMoisture <= pump_water)
+  if (soilMoisture >= PUMP_WATER)
   {
     water_on();
     Serial.println("WATER ON");
   }
-  if (soilMoisture > pump_water)
+  if (soilMoisture < PUMP_WATER)
   {
     water_off();
     Serial.println("WATER OFF");
@@ -205,7 +193,7 @@ void read_light_level()
 void read_soil_moisture()
 {
   soilMoisture = analogRead(SOIL_MOISTURE_PIN);
-  percentageSoilMoisture = map(soilMoisture, wet, dry, 100, 0);
+  percentageSoilMoisture = map(soilMoisture, WET, DRY, 100, 0);
 }
 
 void print_data()
@@ -237,10 +225,9 @@ void loop()
     reconnect();
   }
   client.loop();
-
+  read_soil_moisture();
   read_light_level();
   read_DHT();
-  read_soil_moisture();
   water_pump();
   print_data();
 
