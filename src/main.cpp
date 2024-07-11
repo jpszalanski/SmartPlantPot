@@ -123,8 +123,7 @@ void publishAws()
   payload += ", \"soilMoisture\": ";
   payload += percentageSoilMoisture;
   payload += "}}}";
-
-  Serial.print("Enviando payload para o tópico ");
+  ` Serial.print("Enviando payload para o tópico ");
   Serial.print(AWS_PUB_TOPIC);
   Serial.print(": ");
   Serial.println(payload);
