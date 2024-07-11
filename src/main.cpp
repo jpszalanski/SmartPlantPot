@@ -5,6 +5,7 @@
 #include <Wire.h>
 #include "secrets.h"
 #include "defines.h"
+#include <time.h> // Para obter o timestamp
 
 float humidity = 0;
 float temperature = 0;
@@ -18,6 +19,10 @@ unsigned long interval_pub = 3600000;
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 DHT dht(DHTPIN, DHTTYPE);
+
+const char *ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 0;
+const int daylightOffset_sec = 3600;
 
 // configurar o WiFi
 void setup_wifi()
@@ -41,7 +46,6 @@ void setup_wifi()
   Serial.println(WiFi.localIP());
 }
 
-// Função de callback do MQTT
 void callback(char *topic, byte *payload, unsigned int length)
 {
   Serial.print("Mensagem recebida no tópico: ");
@@ -54,18 +58,17 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.println();
 }
 
-// Função para reconectar ao MQTT se a conexão cair
 void reconnect()
 {
-  // Tente reconectar até que seja bem-sucedido
+  String clientId = "ESP32Client-" + String(WiFi.macAddress());
   while (!client.connected())
   {
     Serial.print("Tentando conectar ao MQTT...");
-    if (client.connect(THINGNAME))
+    if (client.connect(clientId.c_str()))
     {
       Serial.println("conectado");
-      // Subscreva a um tópico, se necessário
-      // client.subscribe("seu/topico");
+      client.subscribe(AWS_SUB_TOPIC_ACCEPTED);
+      client.subscribe(AWS_SUB_TOPIC_REJECTED);
     }
     else
     {
@@ -80,18 +83,13 @@ void reconnect()
 void setup_pins()
 {
   pinMode(LDRPIN, INPUT);
-
   pinMode(SOIL_MOISTURE_PIN, INPUT);
-
   pinMode(WATER_PUMP_PIN, OUTPUT);
-
-  digitalWrite(WATER_PUMP_PIN, HIGH); // iniciar deligado
+  digitalWrite(WATER_PUMP_PIN, HIGH); // iniciar desligado
 }
 
 void setup_aws()
 {
-  // Carregar certificados diretamente no código
-
   espClient.setCACert(AWS_CERT_CA);
   espClient.setCertificate(AWS_CERT_CRT);
   espClient.setPrivateKey(AWS_CERT_PRIVATE);
@@ -99,34 +97,55 @@ void setup_aws()
   client.setCallback(callback);
 }
 
+void setup_time()
+{
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+}
+
+String getTimestamp()
+{
+  time_t now;
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo))
+  {
+    Serial.println("Falha ao obter o tempo");
+    return "";
+  }
+  time(&now);
+  char timestamp[20];
+  strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);
+  return String(timestamp);
+}
 void setup()
 {
   Serial.begin(115200);
-
   dht.begin();
   setup_pins();
   setup_wifi();
   setup_aws();
+  setup_time();
+  // client.setServer(AWS_IOT_ENDPOINT, AWS_PORT);
   reconnect();
 }
 
 void publishAws()
 {
+  String timestamp = getTimestamp();
+  String payload = "{\"state\":{\"reported\":{";
+  payload += "\"deviceId\": \"" + String(WiFi.macAddress()) + "\",";
+  payload += "\"createdAt\": \"" + timestamp + "\",";
+  payload += "\"updatedAt\": \"" + timestamp + "\",";
+  payload += "\"humidity\": " + String(humidity) + ",";
+  payload += "\"temperature\": " + String(temperature) + ",";
+  payload += "\"light\": " + String(lightLevel) + ",";
+  payload += "\"soilMoisture\": " + String(soilMoisture) + ",";
+  payload += "\"timestamp\": \"" + timestamp + "\"}}}";
 
-  String payload = "{\"state\": {\"reported\": {";
-  payload += "\"temperature\": ";
-  payload += temperature;
-  payload += ", \"humidity\": ";
-  payload += humidity;
-  payload += ", \"light\": ";
-  payload += lightLevel;
-  payload += ", \"soilMoisture\": ";
-  payload += percentageSoilMoisture;
-  payload += "}}}";
-  ` Serial.print("Enviando payload para o tópico ");
+  Serial.print("Enviando payload para o tópico ");
   Serial.print(AWS_PUB_TOPIC);
   Serial.print(": ");
   Serial.println(payload);
+  Serial.println("---------------------------------");
 
   if (client.publish(AWS_PUB_TOPIC, payload.c_str()))
   {
@@ -148,6 +167,7 @@ void water_off()
 {
   digitalWrite(WATER_PUMP_PIN, HIGH);
 }
+
 void water_pump()
 {
   Serial.print("soilMoisture: ");
@@ -171,6 +191,7 @@ void water_pump()
     Serial.println("WATER OFF");
   }
 }
+
 void read_DHT()
 {
   humidity = dht.readHumidity();
@@ -195,28 +216,6 @@ void read_soil_moisture()
   percentageSoilMoisture = map(soilMoisture, WET, DRY, 100, 0);
 }
 
-void print_data()
-{
-  Serial.print("Humidity: ");
-  Serial.print(humidity);
-  Serial.println(" %");
-  Serial.println("   ");
-  Serial.print("Temperatura: ");
-  Serial.print(temperature);
-  Serial.println(" C");
-  Serial.println("   ");
-  Serial.print("Light: ");
-  Serial.print(lightLevel);
-  Serial.println(" lx");
-  Serial.println("   ");
-  Serial.print("Soil Moisture: ");
-  Serial.print(soilMoisture);
-  Serial.print(" | ");
-  Serial.print(percentageSoilMoisture);
-  Serial.println(" %");
-  Serial.println("---------------------------------");
-}
-
 void loop()
 {
   if (!client.connected())
@@ -228,7 +227,6 @@ void loop()
   read_light_level();
   read_DHT();
   water_pump();
-  print_data();
 
   if (millis() - last_pub_aws >= interval_pub || last_pub_aws == 0)
   {
