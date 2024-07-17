@@ -14,17 +14,37 @@ int soilMoisture = 0;
 int percentageSoilMoisture = 0;
 
 unsigned long last_pub_aws = 0;
-unsigned long interval_pub = 3600000;
+unsigned long interval_pub = 60000;
+unsigned long last_mqtt_command = 0;
+const unsigned long mqtt_command_interval = 10000; // 10 segundos
+
+bool mqtt_override = false;
 
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 DHT dht(DHTPIN, DHTTYPE);
 
 const char *ntpServer = "pool.ntp.org";
-const long gmtOffset_sec = -10800; // Offset de -3 horas em segundos
+const long gmtOffset_sec = -3600; // Offset de -3 horas em segundos
 const int daylightOffset_sec = 3600;
 
-// Configurar o WiFi
+void setup_wifi();
+void callback(char *topic, byte *payload, unsigned int length);
+void handleCommand(const String &message);
+void water_on();
+void water_off();
+void reconnect();
+void setup_pins();
+void setup_aws();
+void setup_time();
+String getTimestamp();
+bool isMultipleOf10Minutes(const String &timestamp);
+void updateShadow();
+void water_pump();
+void read_DHT();
+void read_light_level();
+void read_soil_moisture();
+
 void setup_wifi()
 {
   delay(10);
@@ -52,44 +72,59 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.print(topic);
   Serial.print(". Mensagem: ");
   String message;
+
   for (int i = 0; i < length; i++)
   {
-    Serial.print((char)payload[i]);
     message += (char)payload[i];
   }
-  Serial.println();
+  Serial.println(message);
+  handleCommand(message);
+}
 
-  // Verifica se a mensagem recebida é para acionar a bomba de água
-  if (message == "water_on")
+void handleCommand(const String &message)
+{
+  mqtt_override = true;
+  last_mqtt_command = millis();
+
+  String lowerMessage = message;
+  lowerMessage.toLowerCase();
+
+  if (lowerMessage.equals("true"))
   {
-    // water_on();
+    water_on();
+    Serial.println("WATER ON - CLOUD");
   }
-  else if (message == "water_off")
+  else if (lowerMessage.equals("false"))
   {
-    // water_off();
+    water_off();
+    Serial.println("WATER OFF - CLOUD");
   }
 }
+
 void water_on()
 {
   digitalWrite(WATER_PUMP_PIN, LOW);
+  last_pub_aws == 0;
 }
 
 void water_off()
 {
   digitalWrite(WATER_PUMP_PIN, HIGH);
+  last_pub_aws == 0;
 }
+
 void reconnect()
 {
-  String clientId = "ESP32Client-" + String(WiFi.macAddress());
+  String clientId = String(WiFi.macAddress());
   while (!client.connected())
   {
     Serial.print("Tentando conectar ao MQTT...");
     if (client.connect(clientId.c_str()))
     {
       Serial.println("Conectado");
-      client.subscribe("$aws/things/SmartPlantPot/shadow/update/accepted");
-      client.subscribe("$aws/things/SmartPlantPot/shadow/update/rejected");
-      client.subscribe("$aws/things/SmartPlantPot/control"); // tópico de controle
+      client.subscribe(AWS_SUB_TOPIC_ACCEPTED);
+      client.subscribe(AWS_SUB_TOPIC_REJECTED);
+      client.subscribe(AWS_SUB_TOPIC_CONTROLE); // tópico de controle
     }
     else
     {
@@ -127,35 +162,24 @@ String getTimestamp()
 {
   struct tm timeinfo;
   char timestamp[30];
-  char msec[5];
 
   if (!getLocalTime(&timeinfo))
   {
     Serial.println("Falha ao obter o tempo");
-    return "";
+    return "erro";
   }
-
-  // Obtém o tempo atual com milissegundos
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
 
   // Formata o tempo em segundos
   strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &timeinfo);
 
-  // Formata os milissegundos
-  snprintf(msec, sizeof(msec), ".%03d", tv.tv_usec / 1000);
-
-  // Concatena os milissegundos ao timestamp
-  strcat(timestamp, msec);
-
-  // Adiciona o sufixo "Z"
-  strcat(timestamp, "Z");
-
-  // Debug adicional
-  Serial.print("Timestamp gerado: ");
-  Serial.println(timestamp);
-
   return String(timestamp);
+}
+
+bool isMultipleOf10Minutes(const String &timestamp)
+{
+  // Extrai os minutos do timestamp
+  int minutes = timestamp.substring(14, 16).toInt();
+  return (minutes % 10) == 0;
 }
 
 void setup()
@@ -171,23 +195,23 @@ void setup()
 
 void updateShadow()
 {
-  String timestamp = getTimestamp();
-
+  // Montando o payload JSON
   String payload = "{\"state\":{\"reported\":{";
   payload += "\"deviceId\": \"" + String(WiFi.macAddress()) + "\",";
-  payload += "\"humidity\": " + String(humidity) + ",";
+  payload += "\"humidity\": " + String(humidity, 2) + ","; // Ajuste para duas casas decimais
   payload += "\"light\": " + String(lightLevel) + ",";
-  payload += "\"soilMoisture\": " + String(soilMoisture) + ",";
-  payload += "\"temperature\": " + String(temperature) + ",";
-  payload += "\"timestamp\": \"" + timestamp + "\"}}}";
+  payload += "\"soilMoisture\": " + String(percentageSoilMoisture) + ",";
+  payload += "\"temperature\": " + String(temperature, 2) + "}}}"; // Ajuste para duas casas decimais
 
+  // Debug: Exibindo o payload
   Serial.print("Atualizando Shadow com payload: ");
   Serial.println(payload);
 
-  if (client.publish("$aws/things/SmartPlantPot/shadow/update", payload.c_str()))
+  // Publicando o payload no tópico AWS
+  if (client.publish(AWS_PUB_TOPIC_UPDATE, payload.c_str()))
   {
     Serial.println("Shadow atualizado com sucesso");
-    last_pub_aws = millis();
+    last_pub_aws = millis(); // Atualizando o tempo da última publicação
   }
   else
   {
@@ -197,6 +221,15 @@ void updateShadow()
 
 void water_pump()
 {
+  Serial.print("temperature: ");
+  Serial.println(temperature);
+
+  Serial.print("humidity: ");
+  Serial.println(humidity);
+
+  Serial.print("lightLevel: ");
+  Serial.println(lightLevel);
+
   Serial.print("soilMoisture: ");
   Serial.println(soilMoisture);
 
@@ -205,17 +238,32 @@ void water_pump()
 
   Serial.print("soilMoisture - pump_water: ");
   Serial.println(soilMoisture - PUMP_WATER);
+
+  Serial.print("percentageSoilMoisture: ");
+  Serial.println(percentageSoilMoisture);
+
   Serial.println(" ");
 
-  if (soilMoisture >= PUMP_WATER)
+  if (!mqtt_override)
   {
-    water_on();
-    Serial.println("WATER ON");
+    if (percentageSoilMoisture < 50)
+    {
+      water_on();
+      Serial.println("WATER ON - sensor");
+    }
+    if (percentageSoilMoisture >= 50)
+    {
+      water_off();
+      Serial.println("WATER OFF - sensor");
+    }
   }
-  if (soilMoisture < PUMP_WATER)
+  else
   {
-    water_off();
-    Serial.println("WATER OFF");
+    // Checa se já passaram 10 segundos desde o último comando MQTT
+    if (millis() - last_mqtt_command >= mqtt_command_interval)
+    {
+      mqtt_override = false; // Volta a considerar a umidade do solo
+    }
   }
 }
 
@@ -234,13 +282,27 @@ void read_DHT()
 
 void read_light_level()
 {
-  lightLevel = analogRead(LDRPIN);
+  lightLevel = 4095 - analogRead(LDRPIN);
+
+  if (isnan(lightLevel))
+  {
+    Serial.println("Falha ao ler do sensor LDR!");
+    delay(3000);
+    return;
+  }
 }
 
 void read_soil_moisture()
 {
   soilMoisture = analogRead(SOIL_MOISTURE_PIN);
   percentageSoilMoisture = map(soilMoisture, WET, DRY, 100, 0);
+
+  if (isnan(soilMoisture))
+  {
+    Serial.println("Falha ao ler do sensor Soil Moisture");
+    delay(3000);
+    return;
+  }
 }
 
 void loop()
@@ -255,9 +317,24 @@ void loop()
   read_DHT();
   water_pump();
 
-  if (millis() - last_pub_aws >= interval_pub || last_pub_aws == 0)
+  if (!isnan(lightLevel) || !isnan(humidity) || !isnan(temperature) || !isnan(lightLevel))
   {
-    updateShadow();
+    String timestamp = getTimestamp();
+    if (timestamp != "erro")
+    {
+      if (isMultipleOf10Minutes(timestamp))
+      {
+        if (millis() - last_pub_aws >= interval_pub)
+        {
+          updateShadow();
+        }
+      }
+      else if (last_pub_aws == 0)
+      {
+        updateShadow();
+      }
+    }
   }
-  delay(5000);
+
+  delay(3000);
 }
