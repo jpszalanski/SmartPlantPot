@@ -96,6 +96,7 @@ void handleCommand(const String &message)
   }
   else if (lowerMessage.equals("false"))
   {
+    updateShadow();
     water_off();
     Serial.println("WATER OFF - CLOUD");
   }
@@ -103,14 +104,13 @@ void handleCommand(const String &message)
 
 void water_on()
 {
+  updateShadow();
   digitalWrite(WATER_PUMP_PIN, LOW);
-  last_pub_aws == 0;
 }
 
 void water_off()
 {
   digitalWrite(WATER_PUMP_PIN, HIGH);
-  last_pub_aws == 0;
 }
 
 void reconnect()
