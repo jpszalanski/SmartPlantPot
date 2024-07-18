@@ -12,7 +12,7 @@ extern PubSubClient client;
 
 void setupAWS();
 void connectAWS();
-void publishSensorReadings(Sensor &sensor, Preferences &preferences);
+bool publishSensorReadings(Sensor &sensor, Preferences &preferences);
 void callback(char *topic, byte *payload, unsigned int length);
 
 bool isSendInterval();

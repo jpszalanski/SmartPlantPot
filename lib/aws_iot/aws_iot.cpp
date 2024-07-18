@@ -39,7 +39,7 @@ void connectAWS()
     }
 }
 
-void publishSensorReadings(Sensor &sensor, Preferences &preferences)
+bool publishSensorReadings(Sensor &sensor, Preferences &preferences)
 {
     String payload = "{\"state\":{\"reported\":{";
     payload += "\"deviceId\": \"" + String(WiFi.macAddress()) + "\",";
@@ -55,10 +55,12 @@ void publishSensorReadings(Sensor &sensor, Preferences &preferences)
     {
         Serial.println("Sensor readings published successfully to AWS IoT:");
         Serial.println(payload);
+        return true; //
     }
     else
     {
         Serial.println("Failed to publish sensor readings to AWS IoT");
+        return false;
     }
 }
 
@@ -80,17 +82,17 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
     else if (String(topic) == AWS_SUB_TOPIC_CONTROLE)
     {
-        if (message == "on")
+        if (message == "true")
         {
             digitalWrite(WATER_PUMP_PIN, LOW); // Activate the water pump
             waterPumpState = true;
-            Serial.println("Water pump activated via MQTT");
+            Serial.println("Water pump ativado via MQTT");
         }
-        else if (message == "off")
+        else if (message == "false")
         {
             digitalWrite(WATER_PUMP_PIN, HIGH); // Deactivate the water pump
             waterPumpState = false;
-            Serial.println("Water pump deactivated via MQTT");
+            Serial.println("Water pump desativado via MQTT");
         }
     }
 }
@@ -108,55 +110,56 @@ bool isWithinRetryWindow()
         return false; // Failed to obtain time
     int second = currentTime.substring(17, 19).toInt();
     return (second > 0 && second <= RETRY_WINDOW_SECONDS);
+}
 
-    bool storeSensorReadings(Sensor & sensor, Preferences & preferences)
+bool storeSensorReadings(Sensor &sensor, Preferences &preferences)
+{
+    if (isnan(sensor.getTemperature()) || isnan(sensor.getHumidity()) || isnan(sensor.getLightLevel()) || isnan(sensor.getSoilMoisture()))
     {
-        if (isnan(sensor.getTemperature()) || isnan(sensor.getHumidity()) || isnan(sensor.getLightLevel()) || isnan(sensor.getSoilMoisture()))
-        {
-            Serial.println("Error reading sensors. Data not saved.");
-            return false;
-        }
-
-        String timestamp = getFormattedTime();
-        preferences.putFloat("temperature", sensor.getTemperature());
-        preferences.putFloat("humidity", sensor.getHumidity());
-        preferences.putInt("lightLevel", sensor.getLightLevel());
-        preferences.putInt("soilMoisture", sensor.getSoilMoisture());
-        preferences.putInt("percSoilMoist", sensor.getPercentageSoilMoisture());
-        preferences.putString("timestamp", timestamp);
-
-        Serial.println("Sensor readings stored:");
-        Serial.println("Timestamp: " + timestamp);
-        sensor.printReadings();
-        return true;
+        Serial.println("Error reading sensors. Data not saved.");
+        return false;
     }
 
-    String getFormattedTime()
-    {
-        time_t now;
-        struct tm timeinfo;
-        if (!getLocalTime(&timeinfo))
-        {
-            Serial.println("Failed to obtain time");
-            return "";
-        }
-        char timeString[30];
-        strftime(timeString, sizeof(timeString), "%Y-%m-%dT%H:%M:%S", &timeinfo);
-        return String(timeString);
-    }
+    String timestamp = getFormattedTime();
+    preferences.putFloat("temperature", sensor.getTemperature());
+    preferences.putFloat("humidity", sensor.getHumidity());
+    preferences.putInt("lightLevel", sensor.getLightLevel());
+    preferences.putInt("soilMoisture", sensor.getSoilMoisture());
+    preferences.putInt("percSoilMoist", sensor.getPercentageSoilMoisture());
+    preferences.putString("timestamp", timestamp);
 
-    void controlWaterPump(Sensor & sensor)
+    Serial.println("Sensor readings stored:");
+    Serial.println("Timestamp: " + timestamp);
+    sensor.printReadings();
+    return true;
+}
+
+String getFormattedTime()
+{
+    time_t now;
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo))
     {
-        if (!waterPumpState && sensor.getPercentageSoilMoisture() < 30)
-        {
-            digitalWrite(WATER_PUMP_PIN, LOW); // Activate the water pump
-            waterPumpState = true;
-            Serial.println("Water pump activated automatically by soil moisture level");
-        }
-        else if (waterPumpState && sensor.getPercentageSoilMoisture() >= 30)
-        {
-            digitalWrite(WATER_PUMP_PIN, HIGH); // Deactivate the water pump
-            waterPumpState = false;
-            Serial.println("Water pump deactivated automatically by soil moisture level");
-        }
+        Serial.println("Failed to obtain time");
+        return "";
     }
+    char timeString[30];
+    strftime(timeString, sizeof(timeString), "%Y-%m-%dT%H:%M:%S", &timeinfo);
+    return String(timeString);
+}
+
+void controlWaterPump(Sensor &sensor)
+{
+    if (!waterPumpState && sensor.getPercentageSoilMoisture() < 30)
+    {
+        digitalWrite(WATER_PUMP_PIN, LOW); // Activate the water pump
+        waterPumpState = true;
+        Serial.println("Water pump activated automatically by soil moisture level");
+    }
+    else if (waterPumpState && sensor.getPercentageSoilMoisture() >= 30)
+    {
+        digitalWrite(WATER_PUMP_PIN, HIGH); // Deactivate the water pump
+        waterPumpState = false;
+        Serial.println("Water pump deactivated automatically by soil moisture level");
+    }
+}

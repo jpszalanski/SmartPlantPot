@@ -21,8 +21,11 @@ Sensor sensor(DHT_PIN, DHT_TYPE, LDR_PIN, SOIL_MOISTURE_PIN, WATER_PUMP_PIN);
 // Instance for NVS storage
 Preferences preferences;
 
+bool dataSentSuccessfully = false;
+unsigned long lastSendAttempt = 0;
+
 void connectAWS();
-void publishSensorReadings();
+bool publishSensorReadings();
 void callback(char *topic, byte *payload, unsigned int length);
 void setupAWS();
 
@@ -66,12 +69,42 @@ void loop()
 
   sensor.readSensors();
 
-  if (isSendInterval() || isWithinRetryWindow())
+  String currentTime = getFormattedTime();
+  if (currentTime.length() == 0)
+  {
+    delay(1000); // Retry in a second if time is not available
+    return;
+  }
+
+  int second = currentTime.substring(17, 19).toInt();
+  if (second == 0 && !dataSentSuccessfully)
   {
     if (storeSensorReadings(sensor, preferences))
     {
-      publishSensorReadings(sensor, preferences);
+      if (publishSensorReadings(sensor, preferences))
+      {
+        dataSentSuccessfully = true;
+      }
     }
+    lastSendAttempt = millis();
+  }
+  else if (second > 0 && second <= RETRY_WINDOW_SECONDS && !dataSentSuccessfully)
+  {
+    if (millis() - lastSendAttempt >= 1000)
+    { // Retry every second
+      if (storeSensorReadings(sensor, preferences))
+      {
+        if (publishSensorReadings(sensor, preferences))
+        {
+          dataSentSuccessfully = true;
+        }
+      }
+      lastSendAttempt = millis();
+    }
+  }
+  else if (second > RETRY_WINDOW_SECONDS)
+  {
+    dataSentSuccessfully = false; // Reset for the next minute
   }
 
   delay(1000); // Check every second
