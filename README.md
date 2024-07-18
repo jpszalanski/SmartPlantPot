@@ -1,8 +1,8 @@
 # SmartPlantPot
 Projeto de Desenvolvimento de Vaso de Planta Inteligente
 
-# SmartPlant-site
-https://github.com/jpszalanski/smartplant-site
+# SmartPlant
+https://github.com/jpszalanski/smart-plant-app
 
 # Site
 https://smartplantpot.com.br
