@@ -22,7 +22,7 @@ void connectAWS()
     String clientId = String(WiFi.macAddress());
     while (!client.connected())
     {
-        Serial.print("Attempting MQTT connection...");
+        Serial.print("Tentando conectar MQTT...");
         if (client.connect(clientId.c_str()))
         {
             Serial.println("connected");
@@ -100,7 +100,8 @@ void callback(char *topic, byte *payload, unsigned int length)
 bool isSendInterval()
 {
     String currentTime = getFormattedTime();
-    return currentTime.endsWith(":00");
+    int minute = currentTime.substring(15, 16).toInt();
+    return (minute == 0);
 }
 
 bool isWithinRetryWindow()
@@ -150,16 +151,18 @@ String getFormattedTime()
 
 void controlWaterPump(Sensor &sensor)
 {
-    if (!waterPumpState && sensor.getPercentageSoilMoisture() < 30)
+    if (!waterPumpState && sensor.getPercentageSoilMoisture() < AUTO_PUMP_WATER)
     {
         digitalWrite(WATER_PUMP_PIN, LOW); // Activate the water pump
         waterPumpState = true;
-        Serial.println("Water pump activated automatically by soil moisture level");
+        Serial.print("Water pump activated automatically by soil moisture level: ");
+        Serial.println(String(sensor.getPercentageSoilMoisture()));
     }
-    else if (waterPumpState && sensor.getPercentageSoilMoisture() >= 30)
+    else if (waterPumpState && sensor.getPercentageSoilMoisture() >= AUTO_PUMP_WATER)
     {
         digitalWrite(WATER_PUMP_PIN, HIGH); // Deactivate the water pump
         waterPumpState = false;
-        Serial.println("Water pump deactivated automatically by soil moisture level");
+        Serial.println("Water pump deactivated automatically by soil moisture level: ");
+        Serial.println(String(sensor.getPercentageSoilMoisture()));
     }
 }

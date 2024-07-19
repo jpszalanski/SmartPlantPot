@@ -11,10 +11,10 @@
 #define WET 4095
 #define DRY 0
 
-#define PUMP_WATER 2700
+#define AUTO_PUMP_WATER 40
 
 // Configurações de tempo para salvar e enviar dados
-#define SEND_INTERVAL_SECONDS 60
+// #define SEND_INTERVAL_SECONDS 600
 #define RETRY_WINDOW_SECONDS 10
 
 #define THINGNAME "SmartPlantPot"

@@ -67,7 +67,8 @@ void loop()
   }
   client.loop();
 
-  sensor.readSensors();
+  // sensor.readSensors();
+  //  controlWaterPump(sensor);
 
   String currentTime = getFormattedTime();
   if (currentTime.length() == 0)
@@ -75,23 +76,29 @@ void loop()
     delay(1000); // Retry in a second if time is not available
     return;
   }
+  /*
+    int minute = currentTime.substring(15, 16).toInt();
+    int second = currentTime.substring(17, 19).toInt();
+    Serial.print("currentTime: ");
+    Serial.println(currentTime);
+    Serial.print("second: ");
+    Serial.println(second);
+    Serial.print("minute: ");
+    Serial.println(minute);
+    */
+  Serial.print("isSendInterval(): ");
+  Serial.println(isSendInterval());
+  Serial.print("isWithinRetryWindow(): ");
+  Serial.println(isWithinRetryWindow());
+  Serial.print("dataSentSuccessfully: ");
+  Serial.println(dataSentSuccessfully);
 
-  int second = currentTime.substring(17, 19).toInt();
-  if (second == 0 && !dataSentSuccessfully)
-  {
-    if (storeSensorReadings(sensor, preferences))
+  if (isSendInterval() && !dataSentSuccessfully)
+
+    if (isWithinRetryWindow() && !dataSentSuccessfully)
     {
-      if (publishSensorReadings(sensor, preferences))
-      {
-        dataSentSuccessfully = true;
-      }
-    }
-    lastSendAttempt = millis();
-  }
-  else if (second > 0 && second <= RETRY_WINDOW_SECONDS && !dataSentSuccessfully)
-  {
-    if (millis() - lastSendAttempt >= 1000)
-    { // Retry every second
+      sensor.readSensors();
+
       if (storeSensorReadings(sensor, preferences))
       {
         if (publishSensorReadings(sensor, preferences))
@@ -101,11 +108,22 @@ void loop()
       }
       lastSendAttempt = millis();
     }
-  }
-  else if (second > RETRY_WINDOW_SECONDS)
-  {
-    dataSentSuccessfully = false; // Reset for the next minute
-  }
+    else if (!isSendInterval() && isWithinRetryWindow() && !dataSentSuccessfully)
+    {
+      sensor.readSensors();
+
+      if (storeSensorReadings(sensor, preferences))
+      {
+        if (publishSensorReadings(sensor, preferences))
+        {
+          dataSentSuccessfully = true;
+        }
+      }
+    }
+    else if (!isSendInterval() && !isWithinRetryWindow())
+    {
+      dataSentSuccessfully = false; // Reset for the next minute
+    }
 
   delay(1000); // Check every second
 }
