@@ -1,31 +1,33 @@
 #include <Arduino.h>
 #include <WiFiManager.h>
-#include <Preferences.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
-#include <DHT.h>
 #include <time.h>
 #include "config.h"
-#include "Sensor.h"
 #include "certs.h"
+
+#include "sensorLDR/sensorLDR.h"
+#include "sensorDHT/sensorDHT.h"
+#include "sensorSoilMoisture/sensorSoilMoisture.h"
+#include "waterPump/waterPump.h"
 #include "aws_iot.h"
 
-// Define global variables
-const char *ntpServer = "pool.ntp.org"; // Define here
-const long gmtOffset_sec = -3600;       // Offset of -3 hours in seconds
-const int daylightOffset_sec = 3600;
-
-// Declare the instance of the Sensor class
-Sensor sensor(DHT_PIN, DHT_TYPE, LDR_PIN, SOIL_MOISTURE_PIN, WATER_PUMP_PIN);
+SensorDHT sensorDHT(DHT_PIN, DHT_TYPE);
+SensorLDR sensorLDR(LDR_PIN);
+SensorSoilMoisture sensorSoilMoisture(SOIL_MOISTURE_PIN);
+WaterPump waterPump(WATER_PUMP_PIN);
 
 // Instance for NVS storage
-Preferences preferences;
+// Preferences preferences;
 
 bool dataSentSuccessfully = false;
 unsigned long lastSendAttempt = 0;
+unsigned long lastSend = 0;
+bool isReboot = true;
 
 void connectAWS();
 bool publishSensorReadings();
+bool publishSensorReadingsRealTime();
 void callback(char *topic, byte *payload, unsigned int length);
 void setupAWS();
 
@@ -47,13 +49,15 @@ void setup()
   Serial.println("Connected to WiFi!");
 
   // Initialize sensors
-  sensor.begin();
+  sensorDHT.begin();
+  sensorLDR.begin();
+  sensorSoilMoisture.begin();
 
   // Initialize preferences (NVS)
-  preferences.begin("sensor_readings", false);
+  // preferences.begin("sensor_readings", false);
 
   // Configure NTP to get the correct time
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  configTime(GMT_OFF_SET_SEC, DAY_LIGHT_OFF_SET_SEC, NTP_SERVER);
 
   // AWS IoT setup
   setupAWS();
@@ -67,63 +71,42 @@ void loop()
   }
   client.loop();
 
-  // sensor.readSensors();
-  //  controlWaterPump(sensor);
-
   String currentTime = getFormattedTime();
   if (currentTime.length() == 0)
   {
     delay(1000); // Retry in a second if time is not available
     return;
   }
-  /*
-    int minute = currentTime.substring(15, 16).toInt();
-    int second = currentTime.substring(17, 19).toInt();
-    Serial.print("currentTime: ");
-    Serial.println(currentTime);
-    Serial.print("second: ");
-    Serial.println(second);
-    Serial.print("minute: ");
-    Serial.println(minute);
-    */
-  Serial.print("isSendInterval(): ");
-  Serial.println(isSendInterval());
-  Serial.print("isWithinRetryWindow(): ");
-  Serial.println(isWithinRetryWindow());
-  Serial.print("dataSentSuccessfully: ");
-  Serial.println(dataSentSuccessfully);
 
   if (isSendInterval() && !dataSentSuccessfully)
+  {
+    sensorDHT.readSensor();
+    sensorLDR.readSensor();
+    sensorSoilMoisture.readSensor();
 
-    if (isWithinRetryWindow() && !dataSentSuccessfully)
+    // if (storeSensorReadings(sensor, preferences))
+    // {
+    if (publishSensorReadings(sensorDHT, sensorLDR, sensorSoilMoisture))
     {
-      sensor.readSensors();
-
-      if (storeSensorReadings(sensor, preferences))
-      {
-        if (publishSensorReadings(sensor, preferences))
-        {
-          dataSentSuccessfully = true;
-        }
-      }
-      lastSendAttempt = millis();
+      dataSentSuccessfully = true;
+      delay(1000); // Check every second
+      //  }
     }
-    else if (!isSendInterval() && isWithinRetryWindow() && !dataSentSuccessfully)
-    {
-      sensor.readSensors();
+  }
+  if (!isSendInterval() && dataSentSuccessfully)
+  {
+    dataSentSuccessfully = false;
+  }
 
-      if (storeSensorReadings(sensor, preferences))
-      {
-        if (publishSensorReadings(sensor, preferences))
-        {
-          dataSentSuccessfully = true;
-        }
-      }
-    }
-    else if (!isSendInterval() && !isWithinRetryWindow())
-    {
-      dataSentSuccessfully = false; // Reset for the next minute
-    }
+  if (isReboot || (millis() - lastSend >= INTERVAL_REAL_TIME))
+  {
+    sensorDHT.readSensor();
+    sensorLDR.readSensor();
+    sensorSoilMoisture.readSensor();
+    publishSensorReadingsRealTime(sensorDHT, sensorLDR, sensorSoilMoisture);
+    lastSend = millis();
+    isReboot = false;
+  }
 
-  delay(1000); // Check every second
+  delay(1000);
 }
