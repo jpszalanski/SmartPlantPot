@@ -10,6 +10,7 @@ WiFiClientSecure net;
 PubSubClient client(net);
 
 bool waterPumpState = false;
+int failedCounter = 0;
 
 void setupAWS()
 {
@@ -34,12 +35,18 @@ void connectAWS()
             client.subscribe(AWS_SUB_TOPIC_CONTROLE);
             client.subscribe(AWS_SUB_TOPIC_FIRMWARE);
             client.subscribe(AWS_SUB_TOPIC_FIRMWARE_ACCEPTED);
+            failedCounter = 0;
         }
         else
         {
             Serial.print("failed, rc=");
             Serial.print(client.state());
             Serial.println(" try again in 5 seconds");
+            failedCounter++;
+            if (failedCounter > AWS_FAILED_COUNTER)
+            {
+                ESP.restart();
+            }
             delay(5000);
         }
     }
@@ -111,7 +118,6 @@ void callback(char *topic, byte *payload, unsigned int length)
     if (String(topic) == AWS_SUB_TOPIC_ACCEPTED)
     {
         Serial.println("Accepted topic received");
-        // Process message if necessary
     }
     else if (String(topic) == AWS_SUB_TOPIC_CONTROLE)
     {
@@ -145,7 +151,7 @@ bool isSendInterval()
     String currentTime = getFormattedTime();
     if (currentTime.length() == 0)
     {
-        return false; // Failed to obtain time
+        return false; // Falha ao obter o time
     }
 
     int minute = 99;
@@ -160,29 +166,6 @@ bool isSendInterval()
     }
 
     return (minute <= SEND_RETRY);
-}
-
-bool isWithinRetryWindow()
-{
-    Serial.println("isWithinRetryWindow()");
-    String currentTime = getFormattedTime();
-    if (currentTime.length() == 0)
-    {
-        return false; // Failed to obtain time
-    }
-
-    int window_retry = 99;
-
-    if (SEND_INTERVAL == "H")
-    {
-        window_retry = currentTime.substring(14, 16).toInt();
-    }
-    else if (SEND_INTERVAL == "M")
-    {
-        window_retry = currentTime.substring(17, 19).toInt();
-    }
-
-    return (window_retry > 0 && window_retry <= SEND_RETRY);
 }
 
 String getFormattedTime()
@@ -201,7 +184,7 @@ String getFormattedTime()
 
 void controlWaterPump(SensorSoilMoisture &sensorSoilMoisture)
 {
-    // Implement control logic for water pump based on soil moisture readings
+    // TODO: autoirrigacao
 }
 
 void processJob(String jobDocument)

@@ -28,8 +28,7 @@ void callback(char *topic, byte *payload, unsigned int length);
 
 // Funções de gerenciamento de intervalos e armazenamento de leituras
 bool isSendInterval();
-bool isWithinRetryWindow();
-// bool storeSensorReadings(SensorDHT &sensorDHT, SensorLDR &sensorLDR, SensorSoilMoisture &sensorSoilMoisture, Preferences &preferences);
+// bool isWithinRetryWindow();
 
 // Funções auxiliares
 String getFormattedTime();

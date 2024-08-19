@@ -8,16 +8,18 @@
 #define WATER_PUMP_PIN 13 // 15E
 
 // Constantes para o mapeamento do sensor de umidade do solo
-#define WET 4095
-#define DRY 0
+#define WET 1200 // Valor Úmido: O valor obtido quando o sensor está submerso em água.
+#define DRY 3500 // Valor Seco: O valor obtido quando o sensor está em um solo completamente seco (no ar).
 
 #define AUTO_PUMP_WATER 40
 
 // Configurações de tempo para salvar e enviar dados
 #define SEND_INTERVAL "H" // M para enviar a cada 10 minutos fechados ou H para cada hora fechada
-#define SEND_RETRY 10 //qtd de vezes que tentara enviar novamente em caso de falha. se SEND_INTERVAL = M, uma vez por segunda, se = H uma vez por minuto.
+#define SEND_RETRY 10     // qtd de vezes que tentara enviar novamente em caso de falha. se SEND_INTERVAL = M, uma vez por segunda, se = H uma vez por minuto.
 
 #define INTERVAL_REAL_TIME 900000
+
+#define AWS_FAILED_COUNTER 5 // quantidade de tentativas de conexao a AWS. apos esse valor o dispositivo reiniciara. cada tentativa tem um delay de 5segundos.
 
 #define THINGNAME "SmartPlantPot"
 
@@ -31,7 +33,6 @@ const char AWS_SUB_TOPIC_REJECTED[] = "$aws/things/" THINGNAME "/shadow/update/r
 const char AWS_SUB_TOPIC_CONTROLE[] = "$aws/things/" THINGNAME "/shadow/control";
 const char AWS_SUB_TOPIC_FIRMWARE[] = "$aws/things/" THINGNAME "/jobs/notify-next";
 const char AWS_SUB_TOPIC_FIRMWARE_ACCEPTED[] = "$aws/things/" THINGNAME "/jobs/$next/get/accepted";
-
 
 // Define global variables
 const char NTP_SERVER[] = "pool.ntp.org"; // Define here
