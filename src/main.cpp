@@ -4,6 +4,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <time.h>
+#include <Update.h>
 #include "config.h"
 #include "certs.h"
 
@@ -27,6 +28,7 @@ unsigned long lastPrint = 0;
 bool isReboot = true;
 
 OTAUpdate ota(OTA_PASSWORD);
+
 
 void connectAWS();
 bool publishSensorReadings();
@@ -65,6 +67,7 @@ void setup()
   sensorDHT.begin();
   sensorLDR.begin();
   sensorSoilMoisture.begin();
+  waterPump.begin();
 
   // Configure NTP to get the correct time
   configTime(GMT_OFF_SET_SEC, DAY_LIGHT_OFF_SET_SEC, NTP_SERVER);

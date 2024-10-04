@@ -6,11 +6,16 @@
 #include <Update.h>
 #include <cJSON.h>
 
+// Variável global da bomba d'água
+extern WaterPump waterPump; 
+
 WiFiClientSecure net;
 PubSubClient client(net);
 
 bool waterPumpState = false;
 int failedCounter = 0;
+
+
 
 void setupAWS()
 {
@@ -121,17 +126,16 @@ void callback(char *topic, byte *payload, unsigned int length)
     }
     else if (String(topic) == AWS_SUB_TOPIC_CONTROLE)
     {
+
         if (message == "true")
         {
-            digitalWrite(WATER_PUMP_PIN, LOW); // Activate the water pump
-            waterPumpState = true;
-            Serial.println("Water pump activated via MQTT");
+            waterPump.setWaterPumpON(); 
+            Serial.println("Water pump ON MQTT");
         }
         else if (message == "false")
         {
-            digitalWrite(WATER_PUMP_PIN, HIGH); // Deactivate the water pump
-            waterPumpState = false;
-            Serial.println("Water pump deactivated via MQTT");
+            waterPump.setWaterPumpOFF(); 
+            Serial.println("Water pump OFF via MQTT");
         }
     }
     else if (String(topic) == AWS_SUB_TOPIC_FIRMWARE)
